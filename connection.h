@@ -44,9 +44,9 @@ private:
 
     void writeToWebServer(boost::asio::yield_context yield, boost::asio::streambuf& buf);
 
-    static void streamingReceive(boost::asio::ip::tcp::socket& socket,
-                                 function<void(boost::asio::streambuf&)> func,
-                                 boost::asio::yield_context yield);
+    void streamingReceive(boost::asio::ip::tcp::socket& socket,
+                          function<void(boost::asio::streambuf&)> func,
+                          boost::asio::yield_context yield);
     void setQuit();
 
     bool checkQuit();

@@ -162,7 +162,6 @@ void Connection::writeToWebServer(boost::asio::yield_context yield, boost::asio:
     if (ec) {
         cout << "doWriteToWebServer: " << ec.message() << endl;
         SET_QUIT;
-        return;
     } else {
         buf.consume(nbytes);
     }
@@ -202,6 +201,16 @@ void Connection::doReadFromServer(boost::asio::yield_context yield) {
 
         cout << "Response code: " << request->responseCode << endl;
 
+        boost::asio::streambuf buf;
+        request->writeInComingHeader(buf);
+
+        async_write(_in_socket, buf.data(), yield[ec]);
+
+        if (ec) {
+            cout << ec.message() << endl;
+            SET_QUIT;
+        }
+
         // now we expect the body
 
         ssize_t contentLength = getContentLength(request->requestHeaders);
@@ -219,6 +228,7 @@ void Connection::doReadFromServer(boost::asio::yield_context yield) {
         }
     }
 
+
 }
 
 
@@ -232,11 +242,13 @@ void Connection::setQuit() {
     checkQuit();
     connectionStatus = ConnectionStatus::closing;
     if (_in_socket.is_open()) {
-        _in_socket.shutdown(tcp::socket::shutdown_receive);
+        //_in_socket.shutdown(tcp::socket::shutdown_receive);
+        _in_socket.close();
     }
 
     if (_out_socket.is_open()) {
-        _out_socket.shutdown(tcp::socket::shutdown_send);
+        //_out_socket.shutdown(tcp::socket::shutdown_send);
+        _out_socket.close();
     }
 }
 
@@ -254,8 +266,32 @@ bool Connection::checkQuit() {
     return false;
 }
 
+
+/*
+ * Chunked reception of http body
+ * func is called for each chunk
+ */
+
 void Connection::streamingReceive(boost::asio::ip::tcp::socket &socket, function<void(boost::asio::streambuf &)> func,
                                   boost::asio::yield_context yield)
 {
+    boost::system::error_code ec;
+    for (;;) {
+        boost::asio::streambuf buf;
+        size_t nbytes;
+        nbytes = async_read_until(socket, buf, "\r\n", yield[ec]);
 
+        if (ec) {
+            cout << "streamingReceive: " << ec.message() << endl;
+            SET_QUIT;
+        }
+
+        size_t chunkSize;
+        istream is(&buf);
+        is >> chunkSize;
+
+        buf.consume(buf.size());
+
+
+    }
 }

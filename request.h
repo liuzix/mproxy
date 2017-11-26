@@ -20,6 +20,7 @@ struct Request {
     string protocol;
 
     int responseCode;
+    string reasonPharse;
 
     struct UrlInfo {
         string protocol;
@@ -39,6 +40,8 @@ struct Request {
 
 
     void parseResponseHeader(boost::asio::streambuf &s);
+
+    void writeInComingHeader(boost::asio::streambuf& buf);
 private:
     vector<char> requestBody;
     vector<char> responseBody;
