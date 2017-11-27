@@ -9,10 +9,16 @@
 #include <exception>
 #include <regex>
 #include <boost/lexical_cast.hpp>
+#include <boost/regex.hpp>
+
 
 #include "connection.h"
 
 using namespace std;
+
+unordered_map<string, int> Request::logFileTracker;
+mutex Request::logFileTrackerLock;
+string Request::logPath;
 
 void Request::parseRequestHeader(boost::asio::streambuf &s) {
     istream is(&s);
@@ -36,13 +42,42 @@ void Request::parseRequestHeader(boost::asio::streambuf &s) {
 
     parseHeaderFields(s, requestHeaders);
 
+    for (auto& kv: requestHeaders) {
+        if (kv.first == "Accept-Encoding")
+            kv.second = "gzip;q=0,deflate;q=0";
+
+        /* tentative support of keep-alive */
+        //if (kv.first == "Connection")
+        //    kv.second = "close";
+    }
+
     parseUrl();
+
+    // create the log file
+    createLogFile();
+
+
 }
 
 void Request::parseUrl() {
-    regex urlRegex(R"((.+?):\/\/(.+?)(?::(\d+?))?\/(.*))");
-    smatch match;
-    if (regex_search(url, match, urlRegex)) {
+
+    if (method == "CONNECT") {
+        urlInfo.protocol = "https";
+
+        const auto index = url.find_first_of(':');
+        if (string::npos == index) {
+            throw runtime_error("Bad CONNECT Line");
+        }
+        urlInfo.hostname = url.substr(0, index);
+        urlInfo.port = url.substr(index + 1);
+
+        return;
+
+    }
+
+    boost::regex urlRegex(R"((.+?):\/\/(.+?)(?::(\d+?))?\/(.*))");
+    boost::smatch match;
+    if (boost::regex_search(url, match, urlRegex)) {
         urlInfo.protocol = match[1];
         urlInfo.hostname = match[2];
         urlInfo.port = match[3];
@@ -61,7 +96,7 @@ void Request::parseHeaderFields(boost::asio::streambuf &s, vector<pair<string, s
     istream is(&s);
     string line;
 
-    while (!is.eof()) {
+    while (true) {
         getline(is, line);
         boost::trim(line);
         if (line.length() == 0) {
@@ -86,7 +121,7 @@ void Request::parseHeaderFields(boost::asio::streambuf &s, vector<pair<string, s
     }
 }
 
-Request::Request(Connection *connection) : _connection(connection){
+Request::Request(Connection *connection, string sourceIP) : _connection(connection), _sourceIP(sourceIP){
 
 }
 
@@ -95,9 +130,11 @@ void Request::writeHeaderFields(boost::asio::streambuf& buf, vector<pair<string,
 
     for(auto& kv: headers) {
         os << kv.first << ": " << kv.second << "\r\n";
+        logFile << kv.first << ": " << kv.second << "\r\n";
     }
 
     os << "\r\n";
+    logFile << "\r\n";
 
 }
 
@@ -105,6 +142,7 @@ void Request::writeOutGoingHeader(boost::asio::streambuf &buf) {
     ostream os(&buf);
 
     os << method << " " << "/" << urlInfo.query << " " << protocol << "\r\n";
+    logFile << method << " " << "/" << urlInfo.query << " " << protocol << "\r\n";
 
     writeHeaderFields(buf, requestHeaders);
 }
@@ -112,7 +150,7 @@ void Request::writeOutGoingHeader(boost::asio::streambuf &buf) {
 void Request::parseResponseHeader(boost::asio::streambuf &s) {
     istream is(&s);
     string line;
-
+    /*
     getline(is, line);
     boost::trim(line);
 
@@ -126,13 +164,87 @@ void Request::parseResponseHeader(boost::asio::streambuf &s) {
     protocol = std::move(splitResult[0]);
     responseCode = boost::lexical_cast<int>(splitResult[1]);
     reasonPharse = std::move(splitResult[2]);
+    */
+
+    is >> protocol;
+    is >> responseCode;
+    if (responseCode > 1000)
+        throw runtime_error("Bad response code");
+    getline(is, reasonPharse);
+    boost::trim(reasonPharse);
 
     parseHeaderFields(s, responseHeaders);
+
+
 
 }
 
 void Request::writeInComingHeader(boost::asio::streambuf &buf) {
     ostream os(&buf);
     os << protocol << " " << responseCode << " " << reasonPharse << "\r\n";
+    logFile << protocol << " " << responseCode << " " << reasonPharse << "\r\n";
     writeHeaderFields(buf, responseHeaders);
+}
+
+void Request::pushResponseBody(vector<char> &buf) {
+    responseBody.insert(responseBody.end(), buf.begin(), buf.end());
+}
+
+void Request::pullResponseBody(bool chunked, boost::asio::streambuf &buf) {
+    // this implementation is only temporary
+    ostream os(&buf);
+    if (chunked)
+        os << std::hex << responseBody.size() << "\r\n";
+    ostream_iterator<char> outIt(os);
+    std::copy(responseBody.begin(), responseBody.end(), outIt);
+
+    ostream_iterator<char> outItLog(logFile);
+    std::copy(responseBody.begin(), responseBody.end(), outItLog);
+    if (chunked)
+        os << "\r\n";
+    responseBody.clear();
+}
+
+void Request::pushRequestBody(vector<char> &buf) {
+    requestBody.insert(requestBody.end(), buf.begin(), buf.end());
+}
+
+void Request::pullRequestBody(bool chunked, boost::asio::streambuf &buf) {
+    // this implementation is only temporary
+    ostream os(&buf);
+    if (chunked)
+        os << std::hex << requestBody.size() << "\r\n";
+    ostream_iterator<char> outIt(os);
+    std::copy(requestBody.begin(), requestBody.end(), outIt);
+    ostream_iterator<char> outItLog(logFile);
+    std::copy(requestBody.begin(), requestBody.end(), outItLog);
+    if (chunked)
+        os << "\r\n";
+    requestBody.clear();
+}
+
+void Request::createLogFile() {
+    assert(!logFile.is_open());
+    assert(!urlInfo.hostname.empty());
+    lock_guard<mutex> guard(logFileTrackerLock);
+
+    string identifier = _sourceIP + "_" + urlInfo.hostname;
+    if (logFileTracker.find(identifier) == logFileTracker.end()) {
+        logFileTracker[identifier] = 0;
+    } else {
+        logFileTracker[identifier]++;
+    }
+
+    logFile.open(logPath + "/" + to_string(logFileTracker[identifier]) + "_" + identifier,
+                 ios_base::in | fstream::out | ios_base::trunc);
+
+    cout << "logfile: " << logPath + "/" + to_string(logFileTracker[identifier]) + "_" + identifier << endl;
+}
+
+void Request::setLogPath(string path) {
+    logPath = std::move(path);
+}
+
+Request::~Request() {
+    logFile.close();
 }

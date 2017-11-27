@@ -36,7 +36,7 @@ int main(int argc, const char** argv) {
     int port = vm.count("port") ? vm["port"].as<int>() : 8080;
     int numworker = vm.count("numworker") ? vm["numworker"].as<int>() : (int)std::thread::hardware_concurrency();
     int timeout = vm.count("timeout") ? vm["timeout"].as<int>() : 10;
-    string log = vm.count("log") ? vm["log"].as<string>() : "./log";
+    string log = vm.count("log") ? vm["log"].as<string>() : "log";
 
     cout << "Server Configuration: \n"
          << "port: " << port << endl

@@ -5,6 +5,7 @@
 #include "server.h"
 #include <iostream>
 #include <boost/bind.hpp>
+#include <boost/shared_ptr.hpp>
 
 using namespace std;
 using namespace boost::asio;
@@ -12,6 +13,8 @@ using namespace boost::asio;
 Server::Server(int port, int numworker, int timeout, string logPath)
     : _acceptor(_io_service, ip::tcp::endpoint(ip::tcp::v4(), (unsigned short)port))
 {
+    Request::setLogPath(logPath);
+
     spawn(_io_service, boost::bind(&Server::doAccept, this, _1));
 
     for (int i = 0; i < numworker; i++) {
@@ -29,9 +32,11 @@ void Server::onNewConnection(boost::asio::ip::tcp::socket& socket) {
     ip::tcp::socket newSocket = std::move(socket);
     cout << "New Connection from " << newSocket.remote_endpoint() << endl;
 
-    _connections_mutex.lock();
-    _connections.push_back(std::make_shared<Connection>(std::move(newSocket), _io_service));
-    _connections_mutex.unlock();
+    //_connections_mutex.lock();
+    //_connections.push_back(std::make_shared<Connection>(std::move(newSocket), _io_service));
+    //_connections_mutex.unlock();
+    std::make_shared<Connection>(std::move(newSocket), _io_service)->go();
+
 }
 
 void Server::doAccept(boost::asio::yield_context yield) {

@@ -8,6 +8,10 @@
 #include <string>
 #include <vector>
 #include <boost/asio.hpp>
+#include <deque>
+#include <fstream>
+#include <unordered_map>
+#include <mutex>
 
 
 using namespace std;
@@ -29,7 +33,7 @@ struct Request {
         string query;
     } urlInfo;
 
-    Request(Connection* connection);
+    Request(Connection* connection, string sourceIP);
 
     vector<pair<string, string>> requestHeaders;
     vector<pair<string, string>> responseHeaders;
@@ -42,16 +46,43 @@ struct Request {
     void parseResponseHeader(boost::asio::streambuf &s);
 
     void writeInComingHeader(boost::asio::streambuf& buf);
+
+    /* for body inspection */
+
+    void pushResponseBody(vector<char>& buf);
+
+    void pullResponseBody(bool chunked, boost::asio::streambuf& buf);
+
+    void pushRequestBody(vector<char>& buf);
+
+    void pullRequestBody(bool chunked, boost::asio::streambuf& buf);
+
+    static void setLogPath(string path);
+
+    ~Request();
 private:
-    vector<char> requestBody;
-    vector<char> responseBody;
+
+    static unordered_map<string, int> logFileTracker;
+    static mutex logFileTrackerLock;
+
+    static string logPath;
+
+
+
+    void createLogFile();
+
+    deque<char> requestBody;
+    deque<char> responseBody;
 
     Connection* _connection;
+    string _sourceIP;
+
+    fstream logFile;
 
     void parseUrl();
     void parseHeaderFields(boost::asio::streambuf& s, vector<pair<string, string>>& headers);
 
-    static void writeHeaderFields(boost::asio::streambuf& buf, vector<pair<string, string>> &headers);
+    void writeHeaderFields(boost::asio::streambuf& buf, vector<pair<string, string>> &headers);
 
 };
 
