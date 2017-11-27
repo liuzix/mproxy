@@ -4,6 +4,7 @@
 #include <thread>
 
 #include "server.h"
+#include "cert.h"
 
 using namespace std;
 namespace po = boost::program_options;
@@ -44,6 +45,7 @@ int main(int argc, const char** argv) {
          << "timeout: " << timeout << endl
          << "log: " << log << endl;
 
+    openSSLInit();
 
     Server s(port, numworker, timeout, log);
     return 0;

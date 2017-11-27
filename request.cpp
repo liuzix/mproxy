@@ -49,6 +49,17 @@ void Request::parseRequestHeader(boost::asio::streambuf &s) {
         /* tentative support of keep-alive */
         //if (kv.first == "Connection")
         //    kv.second = "close";
+
+        if (kv.first == "Host") {
+            string hostPort = kv.second;
+            const auto index = hostPort.find_first_of(':');
+            if (string::npos == index) {
+                urlInfo.hostname = hostPort;
+            } else {
+                urlInfo.hostname = hostPort.substr(0, index);
+                urlInfo.port = hostPort.substr(index + 1);
+            }
+        }
     }
 
     parseUrl();
@@ -75,15 +86,21 @@ void Request::parseUrl() {
 
     }
 
-    boost::regex urlRegex(R"((.+?):\/\/(.+?)(?::(\d+?))?\/(.*))");
+
+    boost::regex urlRegex(R"((http):\/\/(.+?)(?::(\d+?))?\/(.*))");
     boost::smatch match;
-    if (boost::regex_search(url, match, urlRegex)) {
+    if (boost::regex_match(url, match, urlRegex)) {
         urlInfo.protocol = match[1];
         urlInfo.hostname = match[2];
         urlInfo.port = match[3];
         urlInfo.query = match[4];
     } else {
-        throw runtime_error("Bad Request URL");
+        if (!url.empty() && url[0] == '/') {
+            urlInfo.query = url.substr(1);
+            urlInfo.protocol = "https"; // this line has no use
+        } else {
+            throw runtime_error("Bad Request URL");
+        }
     }
 
     if (urlInfo.protocol != "http" && urlInfo.protocol != "https") {
@@ -93,6 +110,8 @@ void Request::parseUrl() {
 }
 
 void Request::parseHeaderFields(boost::asio::streambuf &s, vector<pair<string, string>>& headers) {
+    headers.clear();
+
     istream is(&s);
     string line;
 
@@ -224,7 +243,8 @@ void Request::pullRequestBody(bool chunked, boost::asio::streambuf &buf) {
 }
 
 void Request::createLogFile() {
-    assert(!logFile.is_open());
+    if (logFile.is_open())
+        return;
     assert(!urlInfo.hostname.empty());
     lock_guard<mutex> guard(logFileTrackerLock);
 

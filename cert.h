@@ -5,10 +5,7 @@
 #ifndef PROXY_CERT_H
 #define PROXY_CERT_H
 
-
-class cert {
-
-};
-
+void generateCertForDomain(const char* domain);
+void openSSLInit();
 
 #endif //PROXY_CERT_H

@@ -123,6 +123,33 @@ mproxy/fast:
 	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/build
 .PHONY : mproxy/fast
 
+cert.o: cert.cpp.o
+
+.PHONY : cert.o
+
+# target to build an object file
+cert.cpp.o:
+	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/cert.cpp.o
+.PHONY : cert.cpp.o
+
+cert.i: cert.cpp.i
+
+.PHONY : cert.i
+
+# target to preprocess a source file
+cert.cpp.i:
+	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/cert.cpp.i
+.PHONY : cert.cpp.i
+
+cert.s: cert.cpp.s
+
+.PHONY : cert.s
+
+# target to generate assembly for a file
+cert.cpp.s:
+	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/cert.cpp.s
+.PHONY : cert.cpp.s
+
 connection.o: connection.cpp.o
 
 .PHONY : connection.o
@@ -240,6 +267,9 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... mproxy"
+	@echo "... cert.o"
+	@echo "... cert.i"
+	@echo "... cert.s"
 	@echo "... connection.o"
 	@echo "... connection.i"
 	@echo "... connection.s"

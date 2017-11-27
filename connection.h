@@ -27,6 +27,8 @@ public:
     void go();
 
     ~Connection() {
+        delete _in_sslSock;
+        delete _out_sslSock;
         cout << "Connection destroyed!" << endl;
     }
 private:
@@ -61,12 +63,14 @@ private:
 
 
     /* Chunked Receiving */
-    void streamingReceive(boost::asio::ip::tcp::socket& socket,
+    template <typename stream_type>
+    void streamingReceive(stream_type& socket,
                           boost::asio::streambuf& rbuf,
                           function<void(vector<char>&)> func,
                           boost::asio::yield_context yield);
 
-    void streamingReceive(boost::asio::ip::tcp::socket &socket,
+    template <typename stream_type>
+    void streamingReceive(stream_type& socket,
                           size_t length,
                           boost::asio::streambuf& rbuf,
                           function<void(vector<char>&)> func,
@@ -79,7 +83,8 @@ private:
 
     /* SSL related */
     boost::asio::ssl::context _ctx;
-    boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>* _sslSock;
+    boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>* _in_sslSock;
+    boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>* _out_sslSock;
 
 
     void upgradeToSSL(boost::asio::yield_context yield);
