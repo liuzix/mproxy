@@ -107,6 +107,8 @@ void Request::parseUrl() {
         throw runtime_error("Unsupported Protocol");
     }
 
+    getRewritersByHostName(urlInfo.hostname, this->rewriters);
+
 }
 
 void Request::parseHeaderFields(boost::asio::streambuf &s, vector<pair<string, string>>& headers) {
@@ -140,7 +142,7 @@ void Request::parseHeaderFields(boost::asio::streambuf &s, vector<pair<string, s
     }
 }
 
-Request::Request(Connection *connection, string sourceIP) : _connection(connection), _sourceIP(sourceIP){
+Request::Request(Connection *connection, string sourceIP) : _connection(connection), _sourceIP(std::move(sourceIP)){
 
 }
 
@@ -158,6 +160,9 @@ void Request::writeHeaderFields(boost::asio::streambuf& buf, vector<pair<string,
 }
 
 void Request::writeOutGoingHeader(boost::asio::streambuf &buf) {
+    for (Rewriter* rw: rewriters) {
+        rw->rewriteQuery(urlInfo);
+    }
     ostream os(&buf);
 
     os << method << " " << "/" << urlInfo.query << " " << protocol << "\r\n";
@@ -169,21 +174,6 @@ void Request::writeOutGoingHeader(boost::asio::streambuf &buf) {
 void Request::parseResponseHeader(boost::asio::streambuf &s) {
     istream is(&s);
     string line;
-    /*
-    getline(is, line);
-    boost::trim(line);
-
-    // start parsing status line
-    vector<string> splitResult;
-    boost::split(splitResult, line, boost::is_space());
-
-    if (splitResult.size() != 3)
-        throw runtime_error("Bad Status Line");
-
-    protocol = std::move(splitResult[0]);
-    responseCode = boost::lexical_cast<int>(splitResult[1]);
-    reasonPharse = std::move(splitResult[2]);
-    */
 
     is >> protocol;
     is >> responseCode;
@@ -206,40 +196,37 @@ void Request::writeInComingHeader(boost::asio::streambuf &buf) {
 }
 
 void Request::pushResponseBody(vector<char> &buf) {
-    responseBody.insert(responseBody.end(), buf.begin(), buf.end());
+    if (!buf.empty())
+        responseBody.push(buf);
+    else
+        responseBody.fin();
 }
 
-void Request::pullResponseBody(bool chunked, boost::asio::streambuf &buf) {
-    // this implementation is only temporary
-    ostream os(&buf);
-    if (chunked)
-        os << std::hex << responseBody.size() << "\r\n";
-    ostream_iterator<char> outIt(os);
-    std::copy(responseBody.begin(), responseBody.end(), outIt);
+void Request::pullResponseBody(bool fin, boost::asio::streambuf &buf) {
+    for (auto rw: rewriters)
+        rw->rewriteResponseData(responseBody.getBuffer());
 
-    ostream_iterator<char> outItLog(logFile);
-    std::copy(responseBody.begin(), responseBody.end(), outItLog);
-    if (chunked)
-        os << "\r\n";
-    responseBody.clear();
+    if (fin)
+        responseBody.drain(buf);
+    else
+        responseBody.pull(buf);
 }
 
 void Request::pushRequestBody(vector<char> &buf) {
-    requestBody.insert(requestBody.end(), buf.begin(), buf.end());
+    if (!buf.empty())
+        requestBody.push(buf);
+    else
+        requestBody.fin();
 }
 
-void Request::pullRequestBody(bool chunked, boost::asio::streambuf &buf) {
-    // this implementation is only temporary
-    ostream os(&buf);
-    if (chunked)
-        os << std::hex << requestBody.size() << "\r\n";
-    ostream_iterator<char> outIt(os);
-    std::copy(requestBody.begin(), requestBody.end(), outIt);
-    ostream_iterator<char> outItLog(logFile);
-    std::copy(requestBody.begin(), requestBody.end(), outItLog);
-    if (chunked)
-        os << "\r\n";
-    requestBody.clear();
+void Request::pullRequestBody(bool fin, boost::asio::streambuf &buf) {
+    for (auto rw: rewriters)
+        rw->rewritePostData(requestBody.getBuffer());
+
+    if (fin)
+        requestBody.drain(buf);
+    else
+        requestBody.pull(buf);
 }
 
 void Request::createLogFile() {
@@ -259,6 +246,9 @@ void Request::createLogFile() {
                  ios_base::in | fstream::out | ios_base::trunc);
 
     cout << "logfile: " << logPath + "/" + to_string(logFileTracker[identifier]) + "_" + identifier << endl;
+
+    requestBody.setLogFile(logFile);
+    responseBody.setLogFile(logFile);
 }
 
 void Request::setLogPath(string path) {

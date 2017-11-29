@@ -11,6 +11,18 @@
 #include <openssl/evp.h>
 #include <stdexcept>
 #include <cstring>
+#include <sys/stat.h>
+
+static int file_exists (const char * fileName) {
+    struct stat buf;
+    int i = stat (fileName, &buf);
+    /* File found */
+    if (i == 0) {
+        return 1;
+    }
+    return 0;
+
+}
 
 void openSSLInit() {
     OpenSSL_add_all_algorithms();
@@ -19,8 +31,8 @@ void openSSLInit() {
     srand((unsigned)time(nullptr));
 }
 
-static int do_X509_sign(X509 *cert, EVP_PKEY *pkey, const EVP_MD *md)
-{
+static int do_X509_sign(X509 *cert, EVP_PKEY *pkey, const EVP_MD *md) {
+
     int rv;
     EVP_MD_CTX mctx;
     EVP_PKEY_CTX *pkctx = NULL;
@@ -39,6 +51,9 @@ static int do_X509_sign(X509 *cert, EVP_PKEY *pkey, const EVP_MD *md)
 
 // reference https://dev.to/ecnepsnai/pragmatically-generating-a-self-signed-certificate-and-private-key-usingopenssl
 void generateCertForDomain(const char* domain) {
+    if (file_exists(("certs/" + std::string(domain) + ".pem").c_str())) {
+        return;
+    }
 
     FILE* CAFile = fopen("certs/ca.crt", "r");
 

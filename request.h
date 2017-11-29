@@ -13,10 +13,20 @@
 #include <unordered_map>
 #include <mutex>
 
+#include "rewriter.h"
+#include "httpBody.h"
+
 
 using namespace std;
 
 class Connection;
+
+struct UrlInfo {
+    string protocol;
+    string hostname;
+    string port;
+    string query;
+};
 
 struct Request {
     string method;
@@ -26,12 +36,7 @@ struct Request {
     int responseCode;
     string reasonPharse;
 
-    struct UrlInfo {
-        string protocol;
-        string hostname;
-        string port;
-        string query;
-    } urlInfo;
+    UrlInfo urlInfo;
 
     Request(Connection* connection, string sourceIP);
 
@@ -51,11 +56,11 @@ struct Request {
 
     void pushResponseBody(vector<char>& buf);
 
-    void pullResponseBody(bool chunked, boost::asio::streambuf& buf);
+    void pullResponseBody(bool fin, boost::asio::streambuf& buf);
 
     void pushRequestBody(vector<char>& buf);
 
-    void pullRequestBody(bool chunked, boost::asio::streambuf& buf);
+    void pullRequestBody(bool fin, boost::asio::streambuf& buf);
 
     static void setLogPath(string path);
 
@@ -71,8 +76,8 @@ private:
 
     void createLogFile();
 
-    deque<char> requestBody;
-    deque<char> responseBody;
+    HttpBody requestBody;
+    HttpBody responseBody;
 
     Connection* _connection;
     string _sourceIP;
@@ -83,6 +88,11 @@ private:
     void parseHeaderFields(boost::asio::streambuf& s, vector<pair<string, string>>& headers);
 
     void writeHeaderFields(boost::asio::streambuf& buf, vector<pair<string, string>> &headers);
+
+    /* Rewriting related stuff */
+    vector<Rewriter*> rewriters;
+
+
 
 };
 

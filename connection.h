@@ -27,8 +27,8 @@ public:
     void go();
 
     ~Connection() {
-        delete _in_sslSock;
-        delete _out_sslSock;
+        //delete _in_sslSock;
+        //delete _out_sslSock;
         cout << "Connection destroyed!" << endl;
     }
 private:
@@ -47,7 +47,8 @@ private:
 
     string currentHost;
 
-    Request* currentRequest;
+    //Request* currentRequest;
+    unique_ptr<Request> currentRequest;
 
     bool isSSL = false;
 
@@ -59,7 +60,7 @@ private:
 
     void doConnectToWebServer(boost::asio::yield_context yield, Request& request);
 
-    void writeToWebServer(boost::asio::yield_context yield, boost::asio::streambuf& buf);
+    //void writeToWebServer(boost::asio::yield_context yield, boost::asio::streambuf& buf);
 
 
     /* Chunked Receiving */
@@ -76,15 +77,14 @@ private:
                           function<void(vector<char>&)> func,
                           boost::asio::yield_context yield);
 
-    void setQuit();
-
-    bool checkQuit();
-
 
     /* SSL related */
+    typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket&> ssl_stream_t;
     boost::asio::ssl::context _ctx;
-    boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>* _in_sslSock;
-    boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>* _out_sslSock;
+    //boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>* _in_sslSock;
+    //boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>* _out_sslSock;
+    unique_ptr<ssl_stream_t> _in_sslSock;
+    unique_ptr<ssl_stream_t> _out_sslSock;
 
 
     void upgradeToSSL(boost::asio::yield_context yield);

@@ -177,6 +177,33 @@ connection.cpp.s:
 	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/connection.cpp.s
 .PHONY : connection.cpp.s
 
+httpBody.o: httpBody.cpp.o
+
+.PHONY : httpBody.o
+
+# target to build an object file
+httpBody.cpp.o:
+	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/httpBody.cpp.o
+.PHONY : httpBody.cpp.o
+
+httpBody.i: httpBody.cpp.i
+
+.PHONY : httpBody.i
+
+# target to preprocess a source file
+httpBody.cpp.i:
+	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/httpBody.cpp.i
+.PHONY : httpBody.cpp.i
+
+httpBody.s: httpBody.cpp.s
+
+.PHONY : httpBody.s
+
+# target to generate assembly for a file
+httpBody.cpp.s:
+	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/httpBody.cpp.s
+.PHONY : httpBody.cpp.s
+
 main.o: main.cpp.o
 
 .PHONY : main.o
@@ -231,6 +258,33 @@ request.cpp.s:
 	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/request.cpp.s
 .PHONY : request.cpp.s
 
+rewriter.o: rewriter.cpp.o
+
+.PHONY : rewriter.o
+
+# target to build an object file
+rewriter.cpp.o:
+	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/rewriter.cpp.o
+.PHONY : rewriter.cpp.o
+
+rewriter.i: rewriter.cpp.i
+
+.PHONY : rewriter.i
+
+# target to preprocess a source file
+rewriter.cpp.i:
+	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/rewriter.cpp.i
+.PHONY : rewriter.cpp.i
+
+rewriter.s: rewriter.cpp.s
+
+.PHONY : rewriter.s
+
+# target to generate assembly for a file
+rewriter.cpp.s:
+	$(MAKE) -f CMakeFiles/mproxy.dir/build.make CMakeFiles/mproxy.dir/rewriter.cpp.s
+.PHONY : rewriter.cpp.s
+
 server.o: server.cpp.o
 
 .PHONY : server.o
@@ -273,12 +327,18 @@ help:
 	@echo "... connection.o"
 	@echo "... connection.i"
 	@echo "... connection.s"
+	@echo "... httpBody.o"
+	@echo "... httpBody.i"
+	@echo "... httpBody.s"
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
 	@echo "... request.o"
 	@echo "... request.i"
 	@echo "... request.s"
+	@echo "... rewriter.o"
+	@echo "... rewriter.i"
+	@echo "... rewriter.s"
 	@echo "... server.o"
 	@echo "... server.i"
 	@echo "... server.s"

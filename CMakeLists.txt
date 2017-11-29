@@ -11,6 +11,6 @@ find_package(OpenSSL REQUIRED)
 message(STATUS "Using OpenSSL ${OPENSSL_VERSION}")
 include_directories(${OPENSSL_INCLUDE_DIR})
 
-set(SOURCE_FILES main.cpp server.cpp server.h connection.cpp connection.h request.cpp request.h cert.cpp cert.h)
+set(SOURCE_FILES main.cpp server.cpp server.h connection.cpp connection.h request.cpp request.h cert.cpp cert.h rewriter.cpp rewriter.h httpBody.cpp httpBody.h)
 add_executable(mproxy ${SOURCE_FILES})
 target_link_libraries(mproxy ${Boost_LIBRARIES} pthread ${OPENSSL_LIBRARIES})

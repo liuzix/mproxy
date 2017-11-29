@@ -19,12 +19,6 @@ using namespace boost::asio;
 using namespace boost::asio::ip;
 using namespace std;
 
-#define SET_QUIT setQuit(); return
-
-#define CHECK_QUIT if (checkQuit()) { \
-                       return;        \
-                   }                  \
-
 
 #define STREAM_IN(func, ...) (isSSL ? func(*_in_sslSock,  __VA_ARGS__) : func(_in_socket, __VA_ARGS__))
 
@@ -74,7 +68,19 @@ bool checkChuncked(vector<pair<string, string>>& headers) {
     }
 
     return false;
+}
 
+inline bool setChunked(vector<pair<string, string>>& headers) {
+    auto it = headers.begin();
+    while (it != headers.end()) {
+        if (it->first == "Content-Length" || it->first == "content-length") {
+            headers.erase(it);
+            break;
+        }
+        it++;
+    }
+
+    headers.emplace_back("Transfer-Encoding", "chunked");
 }
 
 
@@ -85,8 +91,8 @@ void Connection::doReadFromClient(boost::asio::yield_context yield) {
         cout << "Start reading from client" << endl;
         boost::system::error_code ec;
         for (;;) {
-            CHECK_QUIT;
-            currentRequest = new Request(this, _in_socket.remote_endpoint().address().to_string());
+            //currentRequest = new Request(this, _in_socket.remote_endpoint().address().to_string());
+            currentRequest = std::make_unique<Request>(this, _in_socket.remote_endpoint().address().to_string());
             boost::asio::streambuf rbuf;
 
             SSL_retry:
@@ -102,7 +108,7 @@ void Connection::doReadFromClient(boost::asio::yield_context yield) {
                 currentRequest->parseRequestHeader(rbuf);
             } catch (exception &e) {
                 cout << "doReadFromClient: " << e.what() << endl;
-                SET_QUIT;
+                throw;
             }
 
             if (currentRequest->method == "CONNECT") {
@@ -122,10 +128,21 @@ void Connection::doReadFromClient(boost::asio::yield_context yield) {
                 doConnectToWebServer(yield, *currentRequest);
 
                 if (connectionStatus != ConnectionStatus::connected) {
-                    SET_QUIT;
+                    // obsolete
                 }
                 currentHost = currentRequest->urlInfo.hostname;
             }
+
+
+
+            // now we expect the body
+
+            ssize_t contentLength = getContentLength(currentRequest->requestHeaders);
+            if (contentLength > 0) {
+                setChunked(currentRequest->requestHeaders);
+            }
+
+            bool originallyChunked = checkChuncked(currentRequest->requestHeaders);
 
             boost::asio::streambuf buf;
             currentRequest->writeOutGoingHeader(buf);
@@ -134,37 +151,38 @@ void Connection::doReadFromClient(boost::asio::yield_context yield) {
 
             if (ec) {
                 cout << ec.message() << endl;
-                SET_QUIT;
+                throw runtime_error(ec.message().c_str());
             }
-
-            // now we expect the body
-
-            ssize_t contentLength = getContentLength(currentRequest->requestHeaders);
 
             if (contentLength > 0) {
                 // we have a fixed length
+                //setChunked(currentRequest->requestHeaders);
                 cout << "Sending post data length: " << contentLength << endl;
                 STREAM_IN(streamingReceive, (size_t) contentLength, rbuf, [=](vector<char> &buf) {
                     currentRequest->pushRequestBody(buf);
                     boost::asio::streambuf tempBuf;
                     currentRequest->pullRequestBody(false, tempBuf);  // pull chunked data
                     STREAM_OUT(async_write, tempBuf, yield);
-                    //write(_in_socket, tempBuf);
                 }, yield);
+                vector<char> dummy(0);
+                currentRequest->pushRequestBody(dummy);
+                boost::asio::streambuf tempBuf;
+                currentRequest->pullRequestBody(true, tempBuf);  // pull chunked data
+                STREAM_OUT(async_write, tempBuf, yield);
 
             } else {
-                // may be chuncked?
-                if (checkChuncked(currentRequest->requestHeaders)) {
+                if (originallyChunked) {
                     cout << "doReadFromClient: " << "Chunked not supported" << endl;
-                    SET_QUIT;
+                    throw runtime_error("doReadFromClient: Chunked post not supported");
                 }
+                // no body
             }
 
             doReadFromServer(yield);
 
         }
     } catch (exception& e) {
-        cout << "Fatal error: " << e.what() << endl;
+        cout << "Error: " << e.what() << endl;
     }
 }
 
@@ -181,57 +199,38 @@ void Connection::doConnectToWebServer(boost::asio::yield_context yield, Request&
 
     if (ec) {
         cout << "doConnectToWebServer: " << ec.message() << endl;
-        SET_QUIT;
-        return;
+        throw runtime_error("doConnectToWebServer: Couldn't resolve: " + ec.message());
     }
 
     async_connect(_out_socket, it, yield[ec]);
 
     if (ec) {
         cout << "doConnectToWebServer: " << ec.message() << endl;
-        SET_QUIT;
-        return;
+        throw runtime_error("doConnectToWebServer: Couldn't connect: " + ec.message());
     }
 
     if (isSSL) {
-        _out_sslSock = new ssl::stream<tcp::socket&>(_out_socket, _ctx);
+        _out_sslSock = std::make_unique<ssl_stream_t>(_out_socket, _ctx);
         _out_sslSock->async_handshake(ssl::stream<tcp::socket>::client, yield[ec]);
 
         if (ec) {
             cout << "doConnectToWebServer: " << ec.message() << endl;
-            SET_QUIT;
+            throw runtime_error("doConnectToWebServer: Couldn't handshake with remote: " + ec.message());
         }
 
         cout << "Connected to remote via SSL" << endl;
     }
 
     connectionStatus = ConnectionStatus::connected;
-    //spawn(*_io_service, boost::bind(&Connection::doReadFromServer, this, _1));
 
     cout << "Connected to server: " << _out_socket.remote_endpoint() << endl;
 }
 
 
-void Connection::writeToWebServer(boost::asio::yield_context yield, boost::asio::streambuf &buf) {
-    boost::system::error_code ec;
-    auto sendBuf = buf.data();
-    size_t nbytes;
-    nbytes = STREAM_OUT(async_write, sendBuf, yield[ec]);
-
-    if (ec) {
-        cout << "doWriteToWebServer: " << ec.message() << endl;
-        SET_QUIT;
-    } else {
-        buf.consume(nbytes);
-    }
-}
-
 
 void Connection::doReadFromServer(boost::asio::yield_context yield) {
     cout << "Start reading from server" << endl;
     boost::system::error_code ec;
-
-    CHECK_QUIT;
 
     boost::asio::streambuf rbuf;
     STREAM_OUT(async_read_until, rbuf, "\r\n\r\n", yield[ec]);
@@ -244,24 +243,32 @@ void Connection::doReadFromServer(boost::asio::yield_context yield) {
         currentRequest->parseResponseHeader(rbuf);
     } catch (exception& e) {
         cout << "doReadFromServer: " << e.what() << endl;
-        SET_QUIT;
+        throw;
     }
 
     cout << "Response code: " << currentRequest->responseCode << endl;
 
+
+    // now we expect the body
+
+    ssize_t contentLength = getContentLength(currentRequest->responseHeaders);
+    if (contentLength > 0) {
+        setChunked(currentRequest->responseHeaders);
+    }
+
+    bool originallyChunked = checkChuncked(currentRequest->responseHeaders);
+
     boost::asio::streambuf buf;
     currentRequest->writeInComingHeader(buf);
+
 
     STREAM_IN(async_write, buf.data(), yield[ec]);
 
     if (ec) {
         cout << ec.message() << endl;
-        SET_QUIT;
+        throw runtime_error("doReadFromServer: Couldn't write header to server:" + ec.message());
     }
 
-    // now we expect the body
-
-    ssize_t contentLength = getContentLength(currentRequest->responseHeaders);
 
     try {
         if (contentLength > 0) {
@@ -273,20 +280,27 @@ void Connection::doReadFromServer(boost::asio::yield_context yield) {
                 STREAM_IN(async_write, tempBuf, yield);
             }, yield);
 
+            vector<char> dummy(0);
+            currentRequest->pushResponseBody(dummy);
+            boost::asio::streambuf tempBuf;
+            currentRequest->pullResponseBody(true, tempBuf);  // drain data
+            STREAM_IN(async_write, tempBuf, yield);
 
         } else {
             // may be chuncked?
-            if (checkChuncked(currentRequest->responseHeaders)) {
+            if (originallyChunked) {
                 STREAM_OUT(streamingReceive, rbuf, [=](vector<char> &buf) {
                     //cout.write(buf.data(), buf.size());
                     currentRequest->pushResponseBody(buf);
                     boost::asio::streambuf tempBuf;
-                    currentRequest->pullResponseBody(true, tempBuf);  // pull chunked data
+                    currentRequest->pullResponseBody(false, tempBuf);  // pull chunked data
                     STREAM_IN(async_write, tempBuf, yield);
                 }, yield);
 
+                vector<char> dummy(0);
+                currentRequest->pushResponseBody(dummy);
                 boost::asio::streambuf tempBuf;
-                currentRequest->pullResponseBody(true, tempBuf);  // pull chunked data
+                currentRequest->pullResponseBody(true, tempBuf);  // drain data
                 STREAM_IN(async_write, tempBuf, yield);
             }
         }
@@ -294,40 +308,8 @@ void Connection::doReadFromServer(boost::asio::yield_context yield) {
         cout << "doReadFromServer: " << e.what() << endl;
     }
 
-    delete currentRequest;
-
 }
 
-
-
-void Connection::setQuit() {
-    checkQuit();
-    connectionStatus = ConnectionStatus::closing;
-
-    if (_in_socket.is_open()) {
-        //_in_socket.shutdown(tcp::socket::shutdown_receive);
-        _in_socket.close();
-    }
-
-    if (_out_socket.is_open()) {
-        //_out_socket.shutdown(tcp::socket::shutdown_send);
-        _out_socket.close();
-    }
-}
-
-bool Connection::checkQuit() {
-    if (connectionStatus == ConnectionStatus::closing) {
-        std::cout << "We are quitting!\n";
-        if (_in_socket.is_open()) {
-            _in_socket.close();
-        }
-        if (_out_socket.is_open()) {
-            _out_socket.close();
-        }
-        return true;
-    }
-    return false;
-}
 
 
 /*
@@ -348,7 +330,7 @@ void Connection::streamingReceive(stream_type& socket,
 
         if (ec) {
             cout << "streamingReceive: " << ec.message() << endl;
-            SET_QUIT;
+            throw runtime_error("streamingReceive: Couldn't read chunk size: " + ec.message());
         }
 
 
@@ -368,7 +350,7 @@ void Connection::streamingReceive(stream_type& socket,
                 //assert(nbytes == 2);
                 if (ec) {
                     cout << "streamingReceive: " << ec.message() << endl;
-                    SET_QUIT;
+                    throw runtime_error("streamingReceive: Couldn't read chunk terminator: " + ec.message());
                 }
             }
 
@@ -382,7 +364,7 @@ void Connection::streamingReceive(stream_type& socket,
 
             if (ec) {
                 cout << "streamingReceive: " << ec.message() << endl;
-                SET_QUIT;
+                throw runtime_error("streamingReceive: Couldn't read chunk " + ec.message());
             }
 
         }
@@ -420,10 +402,10 @@ void Connection::streamingReceive(stream_type& socket,
     while (remaining > 0) {
         size_t readSize = min((size_t)DEFAULT_CHUNK_SIZE, remaining);
 
-        async_read(socket, rbuf, transfer_exactly(readSize), yield[ec]);   // \r\n
+        async_read(socket, rbuf, transfer_exactly(readSize), yield[ec]);
         if (ec) {
             cout << "streamingReceive: " << ec.message() << endl;
-            SET_QUIT;
+            throw runtime_error("streamingReceive: Couldn't read content: " + ec.message());
         }
 
         vector<char> chunkBytes(readSize);
@@ -451,23 +433,21 @@ void Connection::upgradeToSSL(boost::asio::yield_context yield) {
 
     if (ec) {
         cout << "upgradeToSSL: " << ec.message() << endl;
-        SET_QUIT;
+        throw runtime_error("upgradeToSSL: Couldn't OK the CONNECT request: " + ec.message());
     }
-
-
-    cout << "Send 200 OK for CONNECT" << endl;
 
     generateCertForDomain(this->currentRequest->urlInfo.hostname.c_str());
 
+    _ctx.set_options(boost::asio::ssl::context::no_sslv3);
     _ctx.use_certificate_chain_file("certs/" + this->currentRequest->urlInfo.hostname + ".pem");
     _ctx.use_private_key_file("certs/server.key", boost::asio::ssl::context::pem);
     _ctx.use_tmp_dh_file("certs/dh512.pem");
 
     try {
-        _in_sslSock = new ssl::stream<tcp::socket &>(_in_socket, _ctx);
+        _in_sslSock = std::make_unique<ssl_stream_t>(_in_socket, _ctx);
     } catch (exception &e) {
         cout << "upgradeToSSL: " << e.what() << endl;
-        SET_QUIT;
+        throw;
     }
     cout << "Trying to handshake with client" << endl;
     _in_sslSock->async_handshake(ssl::stream<tcp::socket>::server, yield[ec]);
@@ -475,7 +455,7 @@ void Connection::upgradeToSSL(boost::asio::yield_context yield) {
 
     if (ec) {
         cout << "upgradeToSSL: " << ec.message() << endl;
-        SET_QUIT;
+        throw runtime_error("upgradeToSSL: Couldn't handshake with client: " + ec.message());
     }
 
     isSSL = true;

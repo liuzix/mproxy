@@ -5,6 +5,7 @@
 
 #include "server.h"
 #include "cert.h"
+#include "rewriter.h"
 
 using namespace std;
 namespace po = boost::program_options;
@@ -46,6 +47,7 @@ int main(int argc, const char** argv) {
          << "log: " << log << endl;
 
     openSSLInit();
+    initRewriters();
 
     Server s(port, numworker, timeout, log);
     return 0;
